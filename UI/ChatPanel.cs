@@ -85,7 +85,95 @@ namespace QuanLySinhVien.UI
             try
             {
                 string botReply = await _geminiService.SendMessageAsync(userMessage);
-                this.Invoke((MethodInvoker)delegate { AppendMessage("Bot", botReply, ColorTranslator.FromHtml("#F5F5F5"), HorizontalAlignment.Left); });
+
+                if (botReply.Contains("\"intent\": \"lookup_lecturer_info\"") || botReply.Contains("\"intent\":\"lookup_lecturer_info\""))
+                {
+                    try
+                    {
+                        string jsonStr = botReply;
+                        if (botReply.Contains("```json"))
+                        {
+                            int startIndex = botReply.IndexOf("```json") + 7;
+                            int endIndex = botReply.IndexOf("```", startIndex);
+                            if (endIndex > startIndex)
+                            {
+                                jsonStr = botReply.Substring(startIndex, endIndex - startIndex).Trim();
+                            }
+                        }
+                        else if (botReply.Contains("{") && botReply.Contains("}"))
+                        {
+                            int startIndex = botReply.IndexOf("{");
+                            int endIndex = botReply.LastIndexOf("}");
+                            if (endIndex > startIndex)
+                            {
+                                jsonStr = botReply.Substring(startIndex, endIndex - startIndex + 1).Trim();
+                            }
+                        }
+
+                        var json = Newtonsoft.Json.Linq.JObject.Parse(jsonStr);
+                        string messageToUser = json["message_to_user"]?.ToString();
+
+                        this.Invoke((MethodInvoker)delegate { AppendMessage("Bot", messageToUser ?? "Đang tra cứu hệ thống...", ColorTranslator.FromHtml("#F5F5F5"), HorizontalAlignment.Left); });
+
+                        var data = json["extracted_data"];
+                        string lecturerName = data?["lecturer_name"]?.ToString();
+                        string courseName = data?["course_name"]?.ToString();
+                        string semester = data?["semester"]?.ToString();
+
+                        string queryResult = "";
+                        using (System.Data.SqlClient.SqlConnection conn = new My_DB().getConnection)
+                        {
+                            string sql = "SELECT DISTINCT lecturers.name, lecturers.email, lecturers.office, lecturers.schedule FROM lecturers ";
+                            bool joinCourse = (!string.IsNullOrEmpty(courseName) && courseName != "[]") || (!string.IsNullOrEmpty(semester) && semester != "[]");
+                            if (joinCourse)
+                            {
+                                sql += "JOIN course_lecturer ON lecturers.lecturer_id = course_lecturer.lecturer_id JOIN courses ON course_lecturer.course_id = courses.course_id ";
+                            }
+
+                            sql += "WHERE 1=1 ";
+
+                            if (!string.IsNullOrEmpty(lecturerName) && lecturerName != "[]")
+                                sql += "AND lecturers.name LIKE @name ";
+                            if (!string.IsNullOrEmpty(courseName) && courseName != "[]")
+                                sql += "AND courses.course_name LIKE @course ";
+                            if (!string.IsNullOrEmpty(semester) && semester != "[]")
+                                sql += "AND course_lecturer.semester LIKE @semester ";
+
+                            using (System.Data.SqlClient.SqlCommand cmd = new System.Data.SqlClient.SqlCommand(sql, conn))
+                            {
+                                if (!string.IsNullOrEmpty(lecturerName) && lecturerName != "[]") cmd.Parameters.AddWithValue("@name", "%" + lecturerName + "%");
+                                if (!string.IsNullOrEmpty(courseName) && courseName != "[]") cmd.Parameters.AddWithValue("@course", "%" + courseName + "%");
+                                if (!string.IsNullOrEmpty(semester) && semester != "[]") cmd.Parameters.AddWithValue("@semester", "%" + semester + "%");
+
+                                conn.Open();
+                                using (System.Data.SqlClient.SqlDataReader reader = cmd.ExecuteReader())
+                                {
+                                    bool hasResult = false;
+                                    while (reader.Read())
+                                    {
+                                        hasResult = true;
+                                        queryResult += $"- Giảng viên: {reader["name"]}\n";
+                                        try { if (reader["email"] != DBNull.Value) queryResult += $"  Email: {reader["email"]}\n"; } catch {}
+                                        try { if (reader["office"] != DBNull.Value) queryResult += $"  Phòng: {reader["office"]}\n"; } catch {}
+                                        try { if (reader["schedule"] != DBNull.Value) queryResult += $"  Lịch tiếp SV: {reader["schedule"]}\n"; } catch {}
+                                        queryResult += "\n";
+                                    }
+                                    if (!hasResult) queryResult = "Không tìm thấy thông tin giảng viên phù hợp với yêu cầu của bạn.";
+                                }
+                            }
+                        }
+
+                        this.Invoke((MethodInvoker)delegate { AppendMessage("Bot", "Kết quả tra cứu:\n" + queryResult.Trim(), ColorTranslator.FromHtml("#F5F5F5"), HorizontalAlignment.Left); });
+                    }
+                    catch (Exception ex)
+                    {
+                        this.Invoke((MethodInvoker)delegate { AppendMessage("Hệ thống", "Lỗi tra cứu CSDL: " + ex.Message, Color.LightCoral, HorizontalAlignment.Left); });
+                    }
+                }
+                else
+                {
+                    this.Invoke((MethodInvoker)delegate { AppendMessage("Bot", botReply, ColorTranslator.FromHtml("#F5F5F5"), HorizontalAlignment.Left); });
+                }
             }
             catch (Exception)
             {
