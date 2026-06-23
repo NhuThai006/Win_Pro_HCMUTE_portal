@@ -10,6 +10,9 @@ namespace QuanLySinhVien
 {
     public partial class f_Login : Form
     {
+        // Dictionary để lưu số lần đăng nhập sai theo từng UserName
+        private static System.Collections.Generic.Dictionary<string, int> failedLoginAttempts = new System.Collections.Generic.Dictionary<string, int>();
+
         public f_Login()
         {
             InitializeComponent();
@@ -31,6 +34,15 @@ namespace QuanLySinhVien
             if (string.IsNullOrWhiteSpace(txtUsername.Text) || string.IsNullOrWhiteSpace(txtPassword.Text))
             {
                 MessageBox.Show("Vui lòng nhập đầy đủ Tài khoản và Mật khẩu!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string currentUsernameInput = txtUsername.Text.Trim();
+
+            // Kiểm tra xem tài khoản này có đang bị khóa do nhập sai 5 lần không
+            if (failedLoginAttempts.ContainsKey(currentUsernameInput) && failedLoginAttempts[currentUsernameInput] >= 5)
+            {
+                TriggerOTPLockflow(currentUsernameInput);
                 return;
             }
 
@@ -71,6 +83,9 @@ namespace QuanLySinhVien
             // 4. Kiểm tra kết quả trả về sau khi ngắt kết nối an toàn
             if (table.Rows.Count > 0)
             {
+                // Reset số lần sai khi đăng nhập thành công
+                failedLoginAttempts[currentUsernameInput] = 0;
+
                 DataRow row = table.Rows[0];
 
                 // 🟢 SỬA TẠI ĐÂY: Đọc trực tiếp trường Id dưới dạng chuỗi string, loại bỏ Convert.ToInt32 cũ
@@ -93,8 +108,48 @@ namespace QuanLySinhVien
             }
             else
             {
-                MessageBox.Show("Tên đăng nhập, mật khẩu không chính xác hoặc tài khoản của bạn đang chờ hệ thống phê duyệt!",
-                                "Lỗi đăng nhập", MessageBoxButtons.OK, MessageBoxIcon.Stop);
+                if (!failedLoginAttempts.ContainsKey(currentUsernameInput))
+                {
+                    failedLoginAttempts[currentUsernameInput] = 0;
+                }
+                failedLoginAttempts[currentUsernameInput]++;
+
+                if (failedLoginAttempts[currentUsernameInput] >= 5)
+                {
+                    TriggerOTPLockflow(currentUsernameInput);
+                }
+                else
+                {
+                    MessageBox.Show($"Tên đăng nhập, mật khẩu không chính xác hoặc tài khoản của bạn đang chờ hệ thống phê duyệt!\n(Đã sai {failedLoginAttempts[currentUsernameInput]}/5 lần)",
+                                    "Lỗi đăng nhập", MessageBoxButtons.OK, MessageBoxIcon.Stop);
+                }
+            }
+        }
+
+        private void TriggerOTPLockflow(string username)
+        {
+            string userEmail = GetEmailByUsername(username);
+            if (string.IsNullOrEmpty(userEmail))
+            {
+                MessageBox.Show("Tài khoản không tồn tại hoặc không có email liên kết. Vui lòng liên hệ Quản trị viên.", "Lỗi hệ thống", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            MessageBox.Show("Tài khoản của bạn đã bị khóa do nhập sai mật khẩu 5 lần!\nHệ thống sẽ tiến hành gửi một mã OTP đến email của bạn để xác thực mở khóa.", "Khóa tài khoản", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+            string otp = Globals.SendOTPEmail(userEmail);
+            if (!string.IsNullOrEmpty(otp))
+            {
+                f_OTP fOtp = new f_OTP(otp, userEmail);
+                if (fOtp.ShowDialog() == DialogResult.OK)
+                {
+                    failedLoginAttempts[username] = 0; // Reset số lần sai
+                    MessageBox.Show("Đã xác nhận OTP thành công! Bạn có thể tiến hành nhập lại mật khẩu để vào hệ thống.", "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            else
+            {
+                MessageBox.Show("Lỗi gửi mail hệ thống, vui lòng kiểm tra kết nối mạng và thử lại sau!", "Lỗi kết nối", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -130,6 +185,30 @@ namespace QuanLySinhVien
                 }
                 return builder.ToString();
             }
+        }
+
+        private string GetEmailByUsername(string username)
+        {
+            My_DB db = new My_DB();
+            string query = "SELECT Email FROM [Login] WHERE UserName COLLATE SQL_Latin1_General_CP1_CS_AS = @User";
+            using (SqlConnection conn = db.getConnection)
+            {
+                using (SqlCommand command = new SqlCommand(query, conn))
+                {
+                    command.Parameters.Add("@User", SqlDbType.VarChar, 50).Value = username;
+                    try
+                    {
+                        conn.Open();
+                        object result = command.ExecuteScalar();
+                        if (result != null)
+                        {
+                            return result.ToString();
+                        }
+                    }
+                    catch { }
+                }
+            }
+            return null;
         }
     }
 }

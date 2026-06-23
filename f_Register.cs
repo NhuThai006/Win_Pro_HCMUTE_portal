@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.SqlClient;
 using System.Drawing;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
@@ -245,7 +246,7 @@ namespace QuanLySinhVien
                         command.Parameters.Add("@ln", SqlDbType.NVarChar, 50).Value = txb_Lname.Text.Trim();
                         command.Parameters.Add("@pos", SqlDbType.Int).Value = this.position;
                         command.Parameters.Add("@user", SqlDbType.VarChar, 50).Value = txb_User.Text.Trim();
-                        command.Parameters.Add("@pass", SqlDbType.VarChar, 255).Value = txb_Pass.Text;
+                        command.Parameters.Add("@pass", SqlDbType.VarChar, 255).Value = ComputeSHA256(txb_Pass.Text); // Đã mã hóa bảo mật
                         command.Parameters.Add("@email", SqlDbType.VarChar, 100).Value = txb_Email.Text.Trim();
                         command.Parameters.Add("@pic", SqlDbType.VarBinary).Value = picBytes;
                         command.Parameters.Add("@val", SqlDbType.Int).Value = 0;
@@ -362,6 +363,20 @@ namespace QuanLySinhVien
             if (ptb_Picture.Image != null)
             {
                 ptb_Picture.Image.Dispose();
+            }
+        }
+
+        private string ComputeSHA256(string rawData)
+        {
+            using (SHA256 sha256Hash = SHA256.Create())
+            {
+                byte[] bytes = sha256Hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawData));
+                System.Text.StringBuilder builder = new System.Text.StringBuilder();
+                for (int i = 0; i < bytes.Length; i++)
+                {
+                    builder.Append(bytes[i].ToString("x2"));
+                }
+                return builder.ToString();
             }
         }
     }
