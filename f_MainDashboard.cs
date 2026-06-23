@@ -105,8 +105,10 @@ namespace QuanLySinhVien
             }
             else
             {
+                string qwenApiKey = GetQwenApiKey();
+                
                 // Khởi tạo ChatPanel
-                _chatPanel = new ChatPanel(apiKey);
+                _chatPanel = new ChatPanel(apiKey, qwenApiKey);
                 _chatPanel.Visible = false;
                 _chatPanel.CloseClicked += (s, args) => _chatPanel.Visible = false;
                 this.Controls.Add(_chatPanel);
@@ -157,6 +159,25 @@ namespace QuanLySinhVien
                     string json = File.ReadAllText(configPath);
                     JObject config = JObject.Parse(json);
                     return config["GeminiApiKey"]?.ToString();
+                }
+            }
+            catch (Exception)
+            {
+                // Log lỗi
+            }
+            return null;
+        }
+
+        private string GetQwenApiKey()
+        {
+            try
+            {
+                string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+                if (File.Exists(configPath))
+                {
+                    string json = File.ReadAllText(configPath);
+                    JObject config = JObject.Parse(json);
+                    return config["QwenApiKey"]?.ToString();
                 }
             }
             catch (Exception)

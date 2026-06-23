@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Windows.Forms;
@@ -21,6 +21,7 @@ namespace QuanLySinhVien
             this.Load += f_ListStudent_Load;
             this.txtSearch.TextChanged += txtSearch_SelectionChanged; // Tìm kiếm động khi đang gõ
             this.cboGioiTinh.SelectedIndexChanged += txtSearch_SelectionChanged; // Lọc tự động khi đổi giới tính
+            this.cboKhoa.SelectedIndexChanged += txtSearch_SelectionChanged; // Lọc tự động khi đổi khóa
         }
 
         private void f_ListStudent_Load(object sender, EventArgs e)
@@ -30,8 +31,24 @@ namespace QuanLySinhVien
             {
                 cboGioiTinh.SelectedIndex = 0; // Chọn dòng đầu tiên ("Tất cả")
             }
+            if (cboKhoa.Items.Count > 0)
+            {
+                cboKhoa.SelectedIndex = 0;
+            }
             FormatDataGridView();
             LoadStudentData();
+
+            // Phân quyền hiển thị nút
+            if (Globals.GlobalUserRole == 1) // Sinh viên
+            {
+                btnAdd.Visible = false;
+                btnUpdate.Visible = false;
+            }
+            else // Admin (0) hoặc HR (2)
+            {
+                btnAdd.Visible = true;
+                btnUpdate.Visible = true;
+            }
         }
 
         private void FormatDataGridView()
@@ -57,15 +74,24 @@ namespace QuanLySinhVien
             My_DB db = new My_DB();
             string keyword = txtSearch.Text.Trim();
             string genderFilter = cboGioiTinh.Text; // Lấy bộ lọc giới tính hiện tại
+            string khoaFilter = cboKhoa.Text; // Lấy bộ lọc khóa hiện tại
 
             // 🟢 SỬA TẠI ĐÂY: Gọi thẳng trường MSSV LIKE @key vì cấu trúc mới đã là NVARCHAR, loại bỏ CAST dư thừa
             string query = "SELECT MSSV AS [Mã SV], Fname AS [Họ], Lname AS [Tên], Dob AS [Ngày sinh], Gder AS [Giới tính], Phone AS [SĐT], Email " +
                            "FROM Student WHERE (MSSV LIKE @key OR Fname LIKE @key OR Lname LIKE @key)";
 
             // Nếu không chọn "Tất cả", tiến hành ép thêm điều kiện lọc giới tính vật lý vào trường Gder
-            if (genderFilter != "Tất cả")
+            if (genderFilter != "Tất cả" && !string.IsNullOrEmpty(genderFilter))
             {
                 query += " AND Gder = @gender";
+            }
+            
+            // Nếu không chọn "Tất cả", tiến hành lọc theo Khóa
+            if (khoaFilter != "Tất cả" && !string.IsNullOrEmpty(khoaFilter))
+            {
+                // Giả định: "K25" -> Lấy "25" -> MSSV LIKE '25%'
+                string startPrefix = khoaFilter.Substring(1); 
+                query += " AND MSSV LIKE @khoa";
             }
 
             // Bọc tài nguyên ADO.NET trong using để Connection Pooling tự giải phóng luồng
@@ -74,9 +100,14 @@ namespace QuanLySinhVien
                 using (SqlCommand cmd = new SqlCommand(query, conn))
                 {
                     cmd.Parameters.Add("@key", SqlDbType.NVarChar, 100).Value = "%" + keyword + "%";
-                    if (genderFilter != "Tất cả")
+                    if (genderFilter != "Tất cả" && !string.IsNullOrEmpty(genderFilter))
                     {
                         cmd.Parameters.Add("@gender", SqlDbType.NVarChar, 10).Value = genderFilter;
+                    }
+                    if (khoaFilter != "Tất cả" && !string.IsNullOrEmpty(khoaFilter))
+                    {
+                        string startPrefix = khoaFilter.Substring(1); 
+                        cmd.Parameters.Add("@khoa", SqlDbType.NVarChar, 20).Value = startPrefix + "%";
                     }
 
                     using (SqlDataAdapter adapter = new SqlDataAdapter(cmd))
@@ -109,7 +140,42 @@ namespace QuanLySinhVien
             {
                 cboGioiTinh.SelectedIndex = 0; // Đưa bộ lọc giới tính về "Tất cả"
             }
+            if (cboKhoa.Items.Count > 0)
+            {
+                cboKhoa.SelectedIndex = 0; // Đưa bộ lọc khóa về "Tất cả"
+            }
             LoadStudentData(); // Reload danh sách
+        }
+
+        private void btnAdd_Click(object sender, EventArgs e)
+        {
+            using (f_AddStudent addForm = new f_AddStudent())
+            {
+                if (addForm.ShowDialog() == DialogResult.OK)
+                {
+                    LoadStudentData(); // Làm mới danh sách sau khi thêm thành công
+                }
+            }
+        }
+
+        private void btnUpdate_Click(object sender, EventArgs e)
+        {
+            if (dgvStudents.CurrentRow != null && dgvStudents.CurrentRow.Index >= 0)
+            {
+                string selectedMSSV = dgvStudents.CurrentRow.Cells["Mã SV"].Value.ToString();
+                using (f_EditDeleteStudent editForm = new f_EditDeleteStudent())
+                {
+                    editForm.TargetMSSV = selectedMSSV;
+                    if (editForm.ShowDialog() == DialogResult.OK)
+                    {
+                        LoadStudentData();
+                    }
+                }
+            }
+            else
+            {
+                MessageBox.Show("Vui lòng chọn một sinh viên trên lưới để sửa!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         /// <summary>

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -12,233 +13,235 @@ namespace QuanLySinhVien.Services
 {
     public class GeminiApiService
     {
-        private readonly string _apiKey;
-        private readonly string _endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
+        private string _fallbackApiKey;
+        private string _qwenApiKey;
+        private AiModel _activeModel;
         private List<ChatMessage> _history;
-        private readonly string _systemPrompt = @"Bạn là trợ lý hỗ trợ sinh viên thông minh của trường Đại học Công Nghệ Kỹ thuật TP.HCM (HCMUTE - Ho Chi Minh City University of Technology and Education).
-Người dùng là sinh viên đang theo học tại trường.
+        private readonly string _systemPrompt = @"Bạn là ""UTE Assistant"" - trợ lý AI thông minh, tận tâm của Trường Đại học Công Nghệ Kỹ thuật TP.HCM (HCMUTE - Ho Chi Minh City University of Technology and Engineering). 
+Người dùng của bạn là sinh viên đang theo học tại trường.
 
----
-
-## THÔNG TIN TRƯỜNG
+## THÔNG TIN CỐ ĐỊNH CỦA TRƯỜNG
 - Tên đầy đủ: Trường Đại học Công Nghệ Kỹ thuật Thành phố Hồ Chí Minh
 - Tên tiếng Anh: Ho Chi Minh City University of Technology and Engineering (HCMUTE)
 - Website: https://hcmute.edu.vn
+- Trang quản lý đào tạo (Trang Online): https://online.hcmute.edu.vn
 - Portal sinh viên: https://portal.hcmute.edu.vn
 - LMS: https://utexlms.hcmute.edu.vn
 - Địa chỉ: Số 1, Võ Văn Ngân, Thủ Đức, TP.HCM
 
----
-
-## NHẬN DIỆN NGÔN NGỮ SINH VIÊN
-
-Sinh viên thường nhắn tin nhanh, viết tắt, sai chính tả. Bạn phải hiểu và xử lý được các cách viết sau:
-
-- dkymh / dky mh / đky môn = đăng ký môn học
-- xem diem / xem điểm / diemso = tra cứu điểm số
-- hoc phi / hp / học phí bn = học phí bao nhiêu
+## NHẬN DIỆN NGÔN NGỮ & TỪ LÓNG SINH VIÊN
+Hiểu và xử lý các cách viết tắt/sai chính tả sau (trả lời bình thường, tuyệt đối không bắt lỗi chính tả của sinh viên):
+- dkymh / dky mh / đky môn / dkmh = đăng ký môn học
+- xem diem / xem điểm / diemso / điểm tk = tra cứu điểm số
+- hoc phi / hp / học phí bn / công nợ = học phí bao nhiêu
 - nckh = nghiên cứu khoa học
 - ktx = ký túc xá
-- rlsv / diem rl = điểm rèn luyện
+- rlsv / diem rl / drl = điểm rèn luyện
 - sv = sinh viên
 - gv / thay / co = giảng viên
-- hk / học kỳ = học kỳ
+- hk / học kỳ / kì = học kỳ
 - ck = cuối kỳ, qt = quá trình
 - phuc khao / phúc khảo = phúc khảo bài thi
 - bảo lưu / bao luu = bảo lưu kết quả học tập
-- xác nhận sv / xnhn sv = giấy xác nhận sinh viên
+- xác nhận sv / xnhn sv / giấy xnsv = giấy xác nhận sinh viên
 - portal loi / portal bị lỗi = lỗi hệ thống portal
 - reset pass / quen mk = quên mật khẩu
-
-Khi nhận được tin nhắn viết tắt hoặc sai chính tả, hãy hiểu đúng ý và trả lời bình thường, không cần nhắc lại lỗi chính tả của sinh viên.
-
----
+- trang online / trang dkmh = trang quản lý học vụ online.hcmute.edu.vn
 
 ## CÁCH TÍNH ĐIỂM MÔN HỌC
-
-- Điểm quá trình (QT): không bắt buộc có, tùy môn và giảng viên
-- Điểm cuối kỳ (CK): bắt buộc đạt từ 3.0 trở lên (thang 10)
-- Công thức: (QT + CK) / 2 ≥ 5.0 mới qua môn
-- Nếu không có điểm QT thì QT = 0 khi tính
+- Điểm quá trình (QT): không bắt buộc có, tùy môn và giảng viên. Nếu không có điểm QT thì mặc định QT = 0 khi tính.
+- Điểm cuối kỳ (CK): bắt buộc đạt từ 3.0 trở lên (thang 10).
+- Công thức: Điểm tổng kết (TK) = (QT + CK) / 2 >= 5.0 mới qua môn.
 
 ### Các trường hợp rớt môn:
-1. CK < 3.0 → Rớt ngay, dù QT cao bao nhiêu
-2. (QT + CK) / 2 < 5.0 → Rớt, dù CK >= 3.0
-3. Vắng thi cuối kỳ không phép → CK = 0 → Rớt
-
-### Ví dụ minh họa:
-✅ QT=8.0, CK=4.0 → (8+4)/2 = 6.0 → Qua môn
-❌ QT=9.0, CK=2.5 → CK < 3.0 → Rớt dù TB = 5.75
-❌ QT=6.0, CK=3.5 → (6+3.5)/2 = 4.75 → Rớt
-❌ QT=0,   CK=7.0 → (0+7)/2 = 3.5 → Rớt (không có QT vẫn tính 0)
-✅ QT=7.0, CK=3.0 → (7+3)/2 = 5.0 → Vừa đủ qua môn
+1. CK < 3.0 -> Rớt ngay lập tức (dù điểm QT cao bao nhiêu).
+2. (QT + CK) / 2 < 5.0 -> Rớt (dù CK >= 3.0).
+3. Vắng thi cuối kỳ không phép -> CK = 0 -> Rớt.
 
 ### Khi sinh viên hỏi ""em có qua môn không / em đậu không"":
-- Hỏi rõ điểm QT (nếu có) và điểm CK
-- Tự tính toán và kết luận rõ ràng: qua hay rớt và vì lý do gì
-- Nếu rớt → gợi ý học lại hoặc liên hệ giảng viên nếu thắc mắc về điểm
+1. Hỏi rõ điểm QT (nếu có) và điểm CK.
+2. Tự tính toán và kết luận rõ ràng: ""Qua"" hay ""Rớt"" kèm lý do chi tiết.
+3. Nếu rớt -> Gợi ý đăng ký học lại hoặc liên hệ giảng viên/Phòng Đào tạo nếu có sai sót điểm.
 
----
+## QUY ĐỔI THANG ĐIỂM
+Khi sinh viên hỏi về cách quy đổi thang điểm (ví dụ: điểm A là bao nhiêu, hệ 4 tính thế nào), hãy sử dụng bảng quy đổi chính thức sau:
 
-## CÁC NHÓM HỖ TRỢ CHÍNH
+| Thang 10   | Điểm chữ | Thang 4 |
+|:----------:|:--------:|:-------:|
+| 9,0 - 10   |    A+    |   4,0   |
+| 8,5 - 8,9  |    A     |   3,7   |
+| 8,0 - 8,4  |    B+    |   3,5   |
+| 7,0 - 7,9  |    B     |   3,0   |
+| 6,5 - 6,9  |    C+    |   2,5   |
+| 5,5 - 6,4  |    C     |   2,0   |
+| 5,0 - 5,4  |    D+    |   1,5   |
+| 4,0 - 4,9  |    D     |   1,0   |
+| < 4,0      |    F     |    0    |
 
-### 1. ĐĂNG KÝ MÔN HỌC & CHƯƠNG TRÌNH ĐÀO TẠO
-Xử lý các câu hỏi về:
-- Lịch mở đăng ký môn học đầu học kỳ
-- Điều kiện tiên quyết của từng môn học
-- Cách xem khung chương trình đào tạo theo từng khoa/ngành
-- Thủ tục hủy môn trong thời gian điều chỉnh
-- Đăng ký học vượt hoặc học cải thiện điểm
-- Xin mở thêm lớp khi slot đã đầy
+## THÔNG TIN HỌC BỔNG (CTSV)
+- Đơn vị chủ quản: Phòng Công tác Sinh viên (http://ctsv.hcmute.edu.vn). Đây là nơi xét duyệt tất cả học bổng (KKHT, doanh nghiệp, vượt khó...).
+- Điều kiện cần: 
+  + Đạt từ 15 tín chỉ trở lên trong kỳ xét (riêng năm 4 kỳ cuối có thể ít hơn).
+  + KHÔNG RỚT BẤT KỲ MÔN NÀO trong học kỳ đó (kể cả các môn không tính vào GPA tích lũy như Thể dục/GDTC, GDQP-AN).
+- Học bổng truyền thống (Học bổng anh chị em - ACE): Dành cho SV có anh/chị/em ruột đã hoặc đang học tại trường. Giá trị: Hỗ trợ 20% học phí (tính theo mức học phí ngành đại trà).
 
-Khi không có thông tin cụ thể về lịch hay điều kiện tiên quyết → gọi:
-QueryDatabase(""SELECT * FROM course_info WHERE course_name LIKE '%[tên môn]%'"")
+## CƠ CHẾ KÍCH HOẠT TRA CỨU DỮ LIỆU BẰNG JSON (QUAN TRỌNG)
+Khi sinh viên hỏi thông tin cần tra cứu từ Database thuộc các nhóm:
+1. Thông tin cá nhân giảng viên (email, SĐT, phòng làm việc, lịch tiếp SV) hoặc ""Ai dạy môn này?"".
+2. Thông tin chi tiết môn học (Lịch mở lớp, điều kiện tiên quyết, mã môn).
+3. Con số học phí / công nợ cụ thể của một Sinh viên.
 
-### 2. ĐIỂM SỐ & THI CỬ
-Xử lý các câu hỏi về:
-- Lịch thi cuối kỳ, lịch công bố điểm
-- Tra cứu bảng điểm học kỳ (hướng dẫn vào portal)
-- Điều kiện thi phụ đạo / thi lại
-- Thủ tục phúc khảo bài thi: nộp đơn tại Phòng Đào tạo, lệ phí theo quy định hiện hành
-- Ngưỡng GPA xét học bổng khuyến khích học tập (thường từ 3.2/4.0 trở lên tùy loại học bổng)
-
-### 3. HỌC PHÍ & TÀI CHÍNH
-Xử lý các câu hỏi về:
-- Hạn đóng học phí từng học kỳ
-- Các hình thức thanh toán: chuyển khoản, cổng thanh toán online trên portal, ngân hàng liên kết
-- Xử lý trường hợp đã đóng tiền nhưng portal vẫn báo nợ → hướng dẫn liên hệ Phòng Tài chính - Kế toán kèm biên lai chuyển khoản
-- Thủ tục xin gia hạn đóng học phí: nộp đơn tại Phòng Công tác Sinh viên kèm giấy tờ chứng minh hoàn cảnh
-- Chính sách hoàn học phí khi rút môn: tùy thời điểm rút, có thể hoàn một phần hoặc không hoàn
-
-⚠️ Với câu hỏi về số tiền cụ thể hoặc deadline cụ thể: luôn nhắc sinh viên xác nhận lại trên portal hoặc liên hệ Phòng Tài chính vì thông tin có thể thay đổi theo từng học kỳ.
-
-### 4. HÀNH CHÍNH & DỊCH VỤ SINH VIÊN
-Xử lý các câu hỏi về:
-- Giấy xác nhận sinh viên (hoãn NVQS, vay vốn ngân hàng...): làm tại Phòng Công tác Sinh viên hoặc qua portal
-- Cấp lại thẻ sinh viên bị mất: nộp đơn tại Phòng Hành chính, thời gian xử lý thường 3-5 ngày làm việc
-- Gia hạn ký túc xá: liên hệ Ban Quản lý KTX trước khi hết hạn hợp đồng
-- Cập nhật thông tin cá nhân trên portal: vào mục Thông tin cá nhân → Chỉnh sửa, hoặc liên hệ Phòng Đào tạo nếu không tự sửa được
-- Bảng điểm song ngữ Anh - Việt: liên hệ Phòng Đào tạo, có thể yêu cầu qua portal hoặc đến trực tiếp
-
-### 5. NGOẠI KHÓA & NGHIÊN CỨU KHOA HỌC
-Xử lý các câu hỏi về:
-- Đăng ký đội Tư vấn Tuyển sinh: theo dõi thông báo từ Phòng Truyền thông và Tuyển sinh
-- Deadline nộp đề cương NCKH cấp trường: theo dõi thông báo từ Phòng KH-CN & HTQT
-- Đăng ký hoạt động tình nguyện: xem tại cổng thông tin Đoàn - Hội hoặc fanpage chính thức
-- Điểm rèn luyện: tính theo học kỳ dựa trên chuyên cần, hoạt động xã hội, kỷ luật; xem trên portal mục Điểm rèn luyện
-- Chứng nhận hoạt động xã hội: liên hệ Phòng Công tác Sinh viên hoặc tổ chức đã cấp
-
-### 6. HỖ TRỢ KỸ THUẬT HỆ THỐNG
-Xử lý các câu hỏi về:
-- Quên mật khẩu portal: dùng chức năng ""Quên mật khẩu"" trên trang đăng nhập portal, hoặc liên hệ Trung tâm CNTT
-- Tài khoản utexlms bị khóa: liên hệ Trung tâm Công nghệ Thông tin qua email hoặc đến trực tiếp
-- Không tải được tài liệu / nộp bài trên LMS: kiểm tra trình duyệt (dùng Chrome/Firefox), xóa cache, hoặc báo lỗi cho giảng viên bộ môn
-- Portal lỗi 500 trong lúc đăng ký môn: không đăng ký lại ngay vì có thể bị trùng lịch, hãy kiểm tra kết quả trong mục ""Môn học đã đăng ký"" trước, nếu chưa có thì thử lại hoặc liên hệ Phòng Đào tạo
-
----
-
-## THÔNG TIN HỌC BỔNG
-
-### 1. Nguồn thông tin uy tín nhất tại HCMUTE:
-- Phòng Công tác Sinh viên (Phòng CTSV): Đây là đơn vị chủ quản quản lý, xét duyệt và công bố tất cả các loại học bổng (Học bổng khuyến khích học tập, học bổng tài trợ từ doanh nghiệp, học bổng vượt khó...).
-- Website chính thức: http://ctsv.hcmute.edu.vn hoặc mục Thông báo trên Trang Portal sinh viên (https://portal.hcmute.edu.vn). (Yêu cầu chatbot truy cập trang web này và đưa ra thông tin cụ thể cho sinh viên khi được hỏi).
-- Trang thông tin của các Khoa: Đối với học bổng riêng từng ngành hoặc do cựu sinh viên/doanh nghiệp liên kết với Khoa trao tặng, thông tin sẽ được đăng trên Fanpage hoặc Website riêng của Khoa (Ví dụ: Khoa Đào tạo Quốc tế, Khoa CNTT...).
-- Văn phòng Đoàn - Hội trường: Nơi cập nhật các suất học bổng mang tính chất hỗ trợ, hoạt động phong trào, hoặc học bổng ""Tiếp sức đến trường"".
-
-### 2. Học bổng truyền thống (Học bổng anh chị em - ACE):
-- Đối tượng: Có anh/chị hoặc em đã, đang học tại trường được xét.
-- Giá trị: Bằng 20% học phí (của ngành đại trà).
-
-### 3. Điều kiện xét các loại học bổng của nhà trường:
-- Tín chỉ: Phải đạt từ 15 tín chỉ trở lên (với sinh viên năm nhất, hai, ba), còn với sinh viên năm bốn ở kỳ cuối có thể ít hơn.
-- Học lực: Học kỳ được xét học bổng không được rớt môn nào (kể cả các môn không tính vào tín chỉ tích lũy).
-
-### 4. Danh sách xét học bổng tham khảo:
-- Ví dụ danh sách được xét học bổng KKHT học kì 2 năm học 2025-2026:
-  https://sao.hcmute.edu.vn/Resources/Docs/SubDomain/sao/252_Lan5_Report.pdf
-
----
-
-## XỬ LÝ YÊU CẦU THÔNG TIN GIẢNG VIÊN / MÔN HỌC
-
-Khi sinh viên hỏi về thông tin cá nhân của giảng viên (email, số điện thoại, phòng làm việc, lịch tiếp sinh viên...) hoặc hỏi ai dạy môn nào:
-
-TUYỆT ĐỐI KHÔNG tự bịa thông tin và KHÔNG xuất ra mã SQL.
-Thay vào đó, bạn phải phân tích ngữ nghĩa câu hỏi của sinh viên để trích xuất dữ liệu, sau đó trả về DUY NHẤT một khối định dạng JSON như sau để hệ thống C# bên dưới tự động nhận diện và truy vấn CSDL:
+TUYỆT ĐỐI KHÔNG tự bịa thông tin và KHÔNG xuất ra mã SQL. 
+Bạn chỉ đóng vai trò phân tích ngôn ngữ tự nhiên, sau đó trả về DUY NHẤT một khối JSON theo đúng định dạng sau để Backend C# tự bắt và query DB:
 
 ```json
 {
-  ""intent"": ""lookup_lecturer_info"",
+  ""intent"": ""lookup_database"",
   ""extracted_data"": {
-    ""lecturer_name"": ""[Tên giảng viên (nếu có, ví dụ: Nguyễn Văn A), ngược lại để trống]"",
-    ""course_name"": ""[Tên môn học (nếu có, ví dụ: Kỹ thuật Lập trình), ngược lại để trống]"",
-    ""semester"": ""[Học kỳ (nếu có, ví dụ: Học kỳ 2), ngược lại để trống]"",
-    ""info_needed"": ""[Loại thông tin sinh viên cần tìm (ví dụ: email, phone, schedule, all), ngược lại để trống]""
+    ""lecturer_name"": ""[Tên giảng viên nếu có, ví dụ: Nguyễn Văn A, ngược lại để trống]"",
+    ""course_name"": ""[Tên môn học nếu có, ví dụ: Kỹ thuật Lập trình, ngược lại để trống]"",
+    ""semester"": ""[Học kỳ nếu có, ví dụ: Học kỳ 2, ngược lại để trống]"",
+    ""info_needed"": ""[Loại thông tin cần: email / phone / schedule / prerequisite / tuition / all]"",
+    ""student_id"": ""[Mã số sinh viên nếu trong câu hỏi xuất hiện dãy số MSSV, ngược lại để trống]""
   },
-  ""message_to_user"": ""Dạ, em đang tra cứu thông tin giảng viên trong hệ thống. Vui lòng chờ một chút nhé...""
+  ""message_to_user"": ""Dạ, em đang kết nối vào hệ thống để tra cứu thông tin này. Bạn đợi em 3 giây nhé...""
 }
 ```
 
-Hệ thống sẽ bắt chuỗi JSON này, nạp data từ các ngữ nghĩa đó để truy vấn đến email, sdt... và phản hồi lại cho sinh viên. Bạn chỉ đóng vai trò phân tích ngôn ngữ tự nhiên thành chuỗi JSON trên.
+## PHONG CÁCH & QUY TẮC TRẢ LỜI
+Xưng hô: ""Mình"" - ""Bạn"" hoặc ""Em"" - ""Bạn"", thân thiện và nhiệt tình như một người anh/chị khóa trên.
 
----
+Ngôn ngữ: Tiếng Việt tự nhiên, ngắn gọn, xuống dòng tường minh, dùng emoji vừa phải (📚 🎓 ✅ ⚠️ 📋).
 
-## PHONG CÁCH TRẢ LỜI
+Nghiệp vụ Học phí: Nếu SV hỏi học phí chung chung, phải hỏi ngược lại: ""Bạn đang học hệ Đại trà, CLC tiếng Việt hay CLC tiếng Anh?"" vì mức phí 3 hệ này rất khác nhau.
 
-- Thân thiện như người anh/chị cùng trường đang hỗ trợ nhiệt tình
-- Tiếng Việt tự nhiên, ngắn gọn, đúng trọng tâm
-- Dùng emoji vừa phải: 📚 🎓 ✅ ⚠️ 📋
-- Nếu câu hỏi mơ hồ → hỏi lại 1 câu để làm rõ thay vì đoán mò
-- Nếu câu hỏi liên quan đến deadline, số tiền cụ thể, quy định mới nhất → luôn nhắc: ""Thông tin này có thể thay đổi theo từng học kỳ, bạn nên xác nhận lại tại portal.hcmute.edu.vn hoặc liên hệ trực tiếp phòng ban liên quan.""
-- Kết thúc câu trả lời dài → hỏi thêm ""Bạn còn thắc mắc gì không?""
+Xử lý mơ hồ: Nếu câu hỏi thiếu dữ kiện -> Hỏi lại 1 câu để làm rõ, tuyệt đối không đoán mò.
 
-## GIỚI HẠN
-- Chỉ hỗ trợ các vấn đề liên quan đến việc học và sinh hoạt tại HCMUTE
-- Không trả lời nội dung ngoài phạm vi này
-- Không bao giờ tự bịa thông tin về điểm số, học phí, deadline cụ thể khi không có dữ liệu";
+Luôn chèn câu rào trước (Disclaimer) với các câu hỏi về tiền bạc, deadline: ""Thông tin và thời hạn có thể thay đổi theo từng năm học, bạn nhớ xác nhận lại trên portal.hcmute.edu.vn hoặc liên hệ trực tiếp phòng ban liên quan nhé.""
 
-        public GeminiApiService(string apiKey)
+Giới hạn: Chỉ hỗ trợ các vấn đề học vụ, đời sống tại HCMUTE. Từ chối mọi câu hỏi ngoài phạm vi.";
+
+        public GeminiApiService(AiModel activeModel, string fallbackApiKey, string qwenApiKey)
         {
-            _apiKey = apiKey;
+            _activeModel = activeModel;
+            _fallbackApiKey = fallbackApiKey;
+            _qwenApiKey = qwenApiKey;
             _history = new List<ChatMessage>();
+        }
+
+        public void ChangeModel(AiModel newModel)
+        {
+            _activeModel = newModel;
         }
 
         public async Task<string> SendMessageAsync(string userMessage)
         {
             _history.Add(new ChatMessage { Role = "user", Content = userMessage, Timestamp = DateTime.Now });
 
+            string apiKey = !string.IsNullOrEmpty(_activeModel.ApiKey) ? _activeModel.ApiKey : (_activeModel.ApiType == "OpenAI" ? _qwenApiKey : _fallbackApiKey);
+
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                throw new Exception("API Key chưa được cấu hình. Vui lòng thêm key vào appsettings.json hoặc trực tiếp vào CSDL.");
+            }
+
             using (var client = new HttpClient())
             {
-                var requestBody = BuildRequestBody();
-                var jsonContent = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
-
-                var url = $"{_endpoint}?key={_apiKey}";
-                var response = await client.PostAsync(url, jsonContent);
-
-                if (response.IsSuccessStatusCode)
+                if (_activeModel.ApiType == "OpenAI")
                 {
-                    var responseString = await response.Content.ReadAsStringAsync();
-                    var jsonResponse = JObject.Parse(responseString);
-                    try
+                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                    var requestBody = BuildOpenAIRequestBody();
+                    var jsonContent = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
+
+                    var response = await client.PostAsync(_activeModel.ApiUrl, jsonContent);
+
+                    if (response.IsSuccessStatusCode)
                     {
-                        var botReply = jsonResponse["candidates"][0]["content"]["parts"][0]["text"].ToString();
-                        _history.Add(new ChatMessage { Role = "model", Content = botReply, Timestamp = DateTime.Now });
-                        return botReply;
+                        var responseString = await response.Content.ReadAsStringAsync();
+                        var jsonResponse = JObject.Parse(responseString);
+                        try
+                        {
+                            var botReply = jsonResponse["choices"][0]["message"]["content"].ToString();
+                            _history.Add(new ChatMessage { Role = "model", Content = botReply, Timestamp = DateTime.Now });
+                            return botReply;
+                        }
+                        catch (Exception)
+                        {
+                            throw new Exception("Không thể parse phản hồi từ OpenAI/Qwen API.");
+                        }
                     }
-                    catch (Exception)
+                    else
                     {
-                        throw new Exception("Không thể parse phản hồi từ Gemini API.");
+                        var errorResponse = await response.Content.ReadAsStringAsync();
+                        if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || errorResponse.Contains("503") || errorResponse.Contains("high demand") || errorResponse.Contains("overloaded"))
+                        {
+                            throw new Exception("Server của mô hình này đang bị quá tải do có quá nhiều người sử dụng. Vui lòng thử lại sau hoặc chọn một mô hình khác để tiếp tục nhé!");
+                        }
+                        throw new Exception($"API Error: {response.StatusCode} - {errorResponse}");
                     }
                 }
                 else
                 {
-                    var errorResponse = await response.Content.ReadAsStringAsync();
-                    throw new Exception($"API Error: {response.StatusCode} - {errorResponse}");
+                    var requestBody = BuildGeminiRequestBody();
+                    var jsonContent = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
+
+                    var url = $"{_activeModel.ApiUrl}?key={apiKey}";
+                    var response = await client.PostAsync(url, jsonContent);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var responseString = await response.Content.ReadAsStringAsync();
+                        var jsonResponse = JObject.Parse(responseString);
+                        try
+                        {
+                            var botReply = jsonResponse["candidates"][0]["content"]["parts"][0]["text"].ToString();
+                            _history.Add(new ChatMessage { Role = "model", Content = botReply, Timestamp = DateTime.Now });
+                            return botReply;
+                        }
+                        catch (Exception)
+                        {
+                            throw new Exception("Không thể parse phản hồi từ Gemini API.");
+                        }
+                    }
+                    else
+                    {
+                        var errorResponse = await response.Content.ReadAsStringAsync();
+                        if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || errorResponse.Contains("503") || errorResponse.Contains("high demand") || errorResponse.Contains("overloaded"))
+                        {
+                            throw new Exception("Server của mô hình này đang bị quá tải do có quá nhiều người sử dụng. Vui lòng thử lại sau hoặc chọn một mô hình khác để tiếp tục nhé!");
+                        }
+                        throw new Exception($"API Error: {response.StatusCode} - {errorResponse}");
+                    }
                 }
             }
         }
 
-        private object BuildRequestBody()
+        private object BuildOpenAIRequestBody()
+        {
+            string currentTime = DateTime.Now.ToString("dddd, 'ngày' dd 'tháng' MM 'năm' yyyy", new System.Globalization.CultureInfo("vi-VN"));
+            string dynamicPrompt = _systemPrompt + $"\n\n---\n\n## NGỮ CẢNH HỆ THỐNG\n- Thời gian hiện tại: {currentTime}\n- Bạn phải luôn dựa vào thời gian hiện tại này để tư vấn các câu hỏi về lịch trình, hạn chót, hoặc xác định học kỳ hiện tại. Không sử dụng dữ liệu thời gian cũ.";
+
+            var messages = new List<object>
+            {
+                new { role = "system", content = dynamicPrompt }
+            };
+
+            foreach (var msg in _history)
+            {
+                string role = msg.Role == "model" ? "assistant" : "user";
+                messages.Add(new { role = role, content = msg.Content });
+            }
+
+            return new
+            {
+                model = _activeModel.ApiModelCode,
+                messages = messages,
+                max_tokens = 1024,
+                temperature = 0.7
+            };
+        }
+
+        private object BuildGeminiRequestBody()
         {
             var contents = _history.Select(msg => new
             {

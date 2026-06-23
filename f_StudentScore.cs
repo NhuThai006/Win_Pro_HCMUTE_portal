@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
@@ -73,7 +73,34 @@ namespace QuanLySinhVien
         {
             try
             {
-                DataTable dt = Course.GetCourses();
+                DataTable dt;
+                
+                if (Globals.GlobalUserRole == 2)
+                {
+                    // Nếu là giảng viên (HR), chỉ load các môn học mà họ được phân công dạy
+                    My_DB db = new My_DB();
+                    string query = @"SELECT c.MaMH, c.TenMH 
+                                     FROM Course c 
+                                     INNER JOIN Assign a ON c.MaMH = a.MaMH 
+                                     WHERE a.MSGV = @msgv";
+                    using (System.Data.SqlClient.SqlConnection conn = db.getConnection)
+                    {
+                        using (System.Data.SqlClient.SqlCommand cmd = new System.Data.SqlClient.SqlCommand(query, conn))
+                        {
+                            cmd.Parameters.AddWithValue("@msgv", Globals.GlobalUserId);
+                            using (System.Data.SqlClient.SqlDataAdapter adapter = new System.Data.SqlClient.SqlDataAdapter(cmd))
+                            {
+                                dt = new DataTable();
+                                adapter.Fill(dt);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Admin hoặc mặc định sẽ load tất cả các môn
+                    dt = Course.GetCourses();
+                }
 
                 // Tạo trường gộp hiển thị trên ComboBox không sợ lỗi gạch tên cột
                 dt.Columns.Add("Display", typeof(string), "MaMH + ' - ' + TenMH");
@@ -222,6 +249,28 @@ namespace QuanLySinhVien
             string mssv = cboSinhVien.SelectedValue.ToString();
             string maMH = cboMonHoc.SelectedValue.ToString();
 
+            // Kiểm tra phân quyền: HR chỉ được nhập điểm cho môn học mà họ được phân công dạy
+            if (Globals.GlobalUserRole == 2)
+            {
+                My_DB db = new My_DB();
+                string checkQuery = "SELECT COUNT(*) FROM Assign WHERE MSGV = @msgv AND MaMH = @mamh";
+                using (System.Data.SqlClient.SqlConnection conn = db.getConnection)
+                {
+                    using (System.Data.SqlClient.SqlCommand cmd = new System.Data.SqlClient.SqlCommand(checkQuery, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@msgv", Globals.GlobalUserId);
+                        cmd.Parameters.AddWithValue("@mamh", maMH);
+                        conn.Open();
+                        int count = (int)cmd.ExecuteScalar();
+                        if (count == 0)
+                        {
+                            MessageBox.Show("Bạn không được phân công giảng dạy môn học này nên không có quyền nhập/sửa điểm!", "Từ chối quyền truy cập", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+                    }
+                }
+            }
+
             // Khởi tạo thực thể lớp Score để lưu trữ dữ liệu vật lý xuống kịch bản SQL
             Score scoreModel = new Score(mssv, maMH, qt, ck, "Nhập bởi Giảng viên");
             if (scoreModel.AddOrUpdateScore())
@@ -238,6 +287,28 @@ namespace QuanLySinhVien
 
             string mssv = cboSinhVien.SelectedValue.ToString();
             string maMH = cboMonHoc.SelectedValue.ToString();
+
+            // Kiểm tra phân quyền: HR chỉ được xóa điểm cho môn học mà họ được phân công dạy
+            if (Globals.GlobalUserRole == 2)
+            {
+                My_DB db = new My_DB();
+                string checkQuery = "SELECT COUNT(*) FROM Assign WHERE MSGV = @msgv AND MaMH = @mamh";
+                using (System.Data.SqlClient.SqlConnection conn = db.getConnection)
+                {
+                    using (System.Data.SqlClient.SqlCommand cmd = new System.Data.SqlClient.SqlCommand(checkQuery, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@msgv", Globals.GlobalUserId);
+                        cmd.Parameters.AddWithValue("@mamh", maMH);
+                        conn.Open();
+                        int count = (int)cmd.ExecuteScalar();
+                        if (count == 0)
+                        {
+                            MessageBox.Show("Bạn không được phân công giảng dạy môn học này nên không có quyền xóa điểm!", "Từ chối quyền truy cập", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+                    }
+                }
+            }
 
             DialogResult result = MessageBox.Show($"Bạn có thực sự muốn xóa vĩnh viễn điểm môn [{maMH.Trim()}] của sinh viên này không?",
                                                   "Xác nhận hành động", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);

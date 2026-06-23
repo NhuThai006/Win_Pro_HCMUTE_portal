@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Windows.Forms;
@@ -43,6 +43,20 @@ namespace QuanLySinhVien
 
             isInitializing = false;
             LoadContactGrid();
+
+            // Phân quyền hiển thị nút
+            if (Globals.GlobalUserRole == 1) // Sinh viên
+            {
+                btnThem.Visible = false;
+                btnSua.Visible = false;
+                btnXoa.Visible = false;
+            }
+            else // Admin (0) hoặc HR (2)
+            {
+                btnThem.Visible = true;
+                btnSua.Visible = true;
+                btnXoa.Visible = true;
+            }
         }
 
         // =========================================================================

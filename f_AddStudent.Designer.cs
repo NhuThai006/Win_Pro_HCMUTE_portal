@@ -1,4 +1,4 @@
-﻿namespace QuanLySinhVien
+namespace QuanLySinhVien
 {
     partial class f_AddStudent
     {
@@ -51,6 +51,7 @@
             this.txtEmail = new System.Windows.Forms.TextBox();
             this.btnAdd = new System.Windows.Forms.Button();
             this.btnClear = new System.Windows.Forms.Button();
+            this.btnClose = new System.Windows.Forms.Button();
             this.panelAvatar = new System.Windows.Forms.Panel();
             this.lblTitleAvatar = new System.Windows.Forms.Label();
             this.picStudent = new System.Windows.Forms.PictureBox();
@@ -87,6 +88,7 @@
             this.panelInfo.Controls.Add(this.txtEmail);
             this.panelInfo.Controls.Add(this.btnAdd);
             this.panelInfo.Controls.Add(this.btnClear);
+            this.panelInfo.Controls.Add(this.btnClose);
             this.panelInfo.Location = new System.Drawing.Point(20, 20);
             this.panelInfo.Name = "panelInfo";
             this.panelInfo.Size = new System.Drawing.Size(685, 856);
@@ -312,6 +314,21 @@
             this.btnClear.UseVisualStyleBackColor = false;
             this.btnClear.Click += new System.EventHandler(this.btnClear_Click);
             // 
+            // btnClose
+            // 
+            this.btnClose.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(53)))), ((int)(((byte)(69)))));
+            this.btnClose.FlatAppearance.BorderSize = 0;
+            this.btnClose.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnClose.Font = new System.Drawing.Font("Segoe UI", 10.8F, System.Drawing.FontStyle.Bold);
+            this.btnClose.ForeColor = System.Drawing.Color.White;
+            this.btnClose.Location = new System.Drawing.Point(510, 455);
+            this.btnClose.Name = "btnClose";
+            this.btnClose.Size = new System.Drawing.Size(120, 45);
+            this.btnClose.TabIndex = 21;
+            this.btnClose.Text = "Tắt";
+            this.btnClose.UseVisualStyleBackColor = false;
+            this.btnClose.Click += new System.EventHandler(this.btnClose_Click);
+            // 
             // panelAvatar
             // 
             this.panelAvatar.BackColor = System.Drawing.Color.White;
@@ -418,6 +435,7 @@
         private System.Windows.Forms.TextBox txtEmail;
         private System.Windows.Forms.Button btnAdd;
         private System.Windows.Forms.Button btnClear;
+        private System.Windows.Forms.Button btnClose;
 
         private System.Windows.Forms.Panel panelAvatar;
         private System.Windows.Forms.Label lblTitleAvatar;

@@ -1,4 +1,4 @@
-﻿using QuanLySinhVien;
+using QuanLySinhVien;
 using System;
 using System.Drawing;
 using System.IO;
@@ -197,7 +197,7 @@ namespace QuanLySinhVien
                 dtpDob.Value,
                 cboGender.Text,
                 txtPhone.Text.Trim(),
-                txtHometown.Text.Trim(), // Cột Address
+                txtAddress.Text.Trim(), // Cột Address
                 txtHometown.Text.Trim(), // Cột Htown
                 txtEmail.Text.Trim(),
                 studentImage
@@ -240,9 +240,41 @@ namespace QuanLySinhVien
             studentImage = null;
         }
 
-        private void btn_Cancel_Click(object sender, EventArgs e)
+        private bool HasInputData()
         {
-            this.Close();
+            if (!string.IsNullOrWhiteSpace(txtMSSV.Text) ||
+                !string.IsNullOrWhiteSpace(txtFname.Text) ||
+                !string.IsNullOrWhiteSpace(txtLname.Text) ||
+                !string.IsNullOrWhiteSpace(txtPhone.Text) ||
+                !string.IsNullOrWhiteSpace(txtHometown.Text) ||
+                !string.IsNullOrWhiteSpace(txtEmail.Text) ||
+                picStudent.Image != null)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private void btnClose_Click(object sender, EventArgs e)
+        {
+            if (HasInputData())
+            {
+                DialogResult result = MessageBox.Show("Bạn đã nhập dữ liệu. Bạn có muốn lưu lại thông tin này không?", "Xác nhận", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                if (result == DialogResult.Yes)
+                {
+                    btnAdd_Click(sender, e);
+                }
+                else if (result == DialogResult.No)
+                {
+                    this.DialogResult = DialogResult.Cancel;
+                    this.Close();
+                }
+            }
+            else
+            {
+                this.DialogResult = DialogResult.Cancel;
+                this.Close();
+            }
         }
 
         private void f_AddStudent_FormClosed(object sender, FormClosedEventArgs e)

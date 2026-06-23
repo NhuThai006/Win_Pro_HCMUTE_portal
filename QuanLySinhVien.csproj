@@ -151,7 +151,9 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Models\AiModel.cs" />
     <Compile Include="Models\ChatMessage.cs" />
+    <Compile Include="Services\AiModelService.cs" />
     <Compile Include="Services\GeminiApiService.cs" />
     <Compile Include="UI\ChatBubbleButton.cs">
       <SubType>UserControl</SubType>

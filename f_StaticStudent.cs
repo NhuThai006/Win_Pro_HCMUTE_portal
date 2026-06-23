@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Drawing;
@@ -105,17 +105,18 @@ namespace QuanLySinhVien
         private void LoadGPAStatisticsGrid()
         {
             My_DB db = new My_DB();
-            // Lưu ý: MSSV hiện là NVARCHAR(20), các hàm JOIN/GROUP BY vẫn hoạt động bình thường
-            string query = @"SELECT s.MSSV, s.Fname + ' ' + s.Lname AS HoTen, 
-                                    ROUND(AVG(sc.DiemTK), 2) AS DiemTB, 
+            // Sử dụng LEFT JOIN để hiển thị tất cả sinh viên, kể cả người chưa có điểm
+            string query = @"SELECT s.MSSV, ISNULL(s.Fname, '') + ' ' + ISNULL(s.Lname, '') AS HoTen, 
+                                    ISNULL(ROUND(AVG(sc.DiemTK), 2), 0) AS DiemTB, 
                                     CASE 
+                                        WHEN AVG(sc.DiemTK) IS NULL THEN N'Chưa có điểm'
                                         WHEN AVG(sc.DiemTK) >= 9 THEN N'Xuất sắc' 
                                         WHEN AVG(sc.DiemTK) >= 8 THEN N'Giỏi' 
                                         WHEN AVG(sc.DiemTK) >= 6.5 THEN N'Khá' 
                                         WHEN AVG(sc.DiemTK) >= 5 THEN N'Trung bình' 
                                         ELSE N'Yếu' 
                                     END AS XepLoai 
-                             FROM Student s JOIN Score sc ON s.MSSV = sc.MSSV 
+                             FROM Student s LEFT JOIN Score sc ON s.MSSV = sc.MSSV 
                              GROUP BY s.MSSV, s.Fname, s.Lname";
 
             dgvDiemTrungBinh.Rows.Clear();
@@ -137,17 +138,21 @@ namespace QuanLySinhVien
                                 dgvDiemTrungBinh.Rows[rowIndex].Cells["colDiemTB"].Value = reader["DiemTB"].ToString();
                                 dgvDiemTrungBinh.Rows[rowIndex].Cells["colXepLoai"].Value = reader["XepLoai"].ToString();
 
-                                if (Convert.ToDouble(reader["DiemTB"]) < 5.0)
+                                if (reader["DiemTB"] != DBNull.Value)
                                 {
-                                    dgvDiemTrungBinh.Rows[rowIndex].Cells["colDiemTB"].Style.ForeColor = Color.DarkRed;
-                                    dgvDiemTrungBinh.Rows[rowIndex].Cells["colDiemTB"].Style.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+                                    double diemTB = Convert.ToDouble(reader["DiemTB"]);
+                                    if (diemTB < 5.0)
+                                    {
+                                        dgvDiemTrungBinh.Rows[rowIndex].Cells["colDiemTB"].Style.ForeColor = Color.DarkRed;
+                                        dgvDiemTrungBinh.Rows[rowIndex].Cells["colDiemTB"].Style.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+                                    }
                                 }
                             }
                         }
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine("Lỗi nạp lưới điểm: " + ex.Message);
+                        MessageBox.Show("Lỗi nạp lưới điểm: " + ex.Message);
                     }
                 }
             }

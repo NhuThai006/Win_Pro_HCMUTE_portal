@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Windows.Forms;
@@ -34,8 +34,20 @@ namespace QuanLySinhVien
 
         public bool AddStudent()
         {
-            string query = "INSERT INTO Student (MSSV, Fname, Lname, Dob, Gder, Phone, Address, Htown, Email, Pture) " +
-                           "VALUES (@mssv, @fname, @lname, @dob, @gder, @phone, @addr, @htown, @email, @pic)";
+            string query = @"
+                BEGIN TRY
+                    BEGIN TRANSACTION;
+                    INSERT INTO Login (Id, Fname, Lname, Position, UserName, Password, Email, Valid) 
+                    VALUES (@mssv, @fname, @lname, 1, @mssv, LOWER(CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CAST('Student123@' AS VARCHAR(255))), 2)), @email, 1);
+                    
+                    INSERT INTO Student (MSSV, Fname, Lname, Dob, Gder, Phone, Address, Htown, Email, Pture) 
+                    VALUES (@mssv, @fname, @lname, @dob, @gder, @phone, @addr, @htown, @email, @pic);
+                    COMMIT TRANSACTION;
+                END TRY
+                BEGIN CATCH
+                    ROLLBACK TRANSACTION;
+                    THROW;
+                END CATCH";
 
             using (SqlConnection conn = db.getConnection)
             {
@@ -116,6 +128,7 @@ namespace QuanLySinhVien
                             string queryScore = "DELETE FROM Score WHERE MSSV = @id";
                             string queryDKMH = "DELETE FROM DKMH WHERE MSSV = @id";
                             string queryStudent = "DELETE FROM Student WHERE MSSV = @id";
+                            string queryLogin = "DELETE FROM Login WHERE Id = @id AND Position = 1";
 
                             using (SqlCommand cmd = new SqlCommand("", conn, transaction))
                             {
@@ -125,6 +138,7 @@ namespace QuanLySinhVien
                                 cmd.CommandText = queryDKMH; cmd.ExecuteNonQuery();
                                 cmd.CommandText = queryStudent;
                                 int rows = cmd.ExecuteNonQuery();
+                                cmd.CommandText = queryLogin; cmd.ExecuteNonQuery();
 
                                 transaction.Commit();
                                 return rows > 0;

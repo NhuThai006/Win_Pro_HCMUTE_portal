@@ -3,6 +3,8 @@ using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Windows.Forms;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace QuanLySinhVien
 {
@@ -48,7 +50,7 @@ namespace QuanLySinhVien
                 {
                     // Sử dụng SqlParameter bảo mật tuyệt đối chống lỗi SQL Injection
                     command.Parameters.Add("@User", SqlDbType.VarChar, 50).Value = txtUsername.Text.Trim();
-                    command.Parameters.Add("@Password", SqlDbType.VarChar, 255).Value = txtPassword.Text;
+                    command.Parameters.Add("@Password", SqlDbType.VarChar, 255).Value = ComputeSHA256(txtPassword.Text);
 
                     using (SqlDataAdapter adapter = new SqlDataAdapter(command))
                     {
@@ -114,6 +116,20 @@ namespace QuanLySinhVien
             this.Hide();
             forgetPass.ShowDialog();
             this.Show();
+        }
+
+        private string ComputeSHA256(string rawData)
+        {
+            using (SHA256 sha256Hash = SHA256.Create())
+            {
+                byte[] bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(rawData));
+                StringBuilder builder = new StringBuilder();
+                for (int i = 0; i < bytes.Length; i++)
+                {
+                    builder.Append(bytes[i].ToString("x2"));
+                }
+                return builder.ToString();
+            }
         }
     }
 }

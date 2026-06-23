@@ -1,4 +1,4 @@
-﻿using QuanLySinhVien;
+using QuanLySinhVien;
 using System;
 using System.Data;
 using System.Data.SqlClient;
@@ -275,9 +275,18 @@ namespace QuanLySinhVien
             }
         }
 
-        private void btn_Cancel_Click(object sender, EventArgs e)
+        private void btnClose_Click(object sender, EventArgs e)
         {
-            this.Close();
+            DialogResult result = MessageBox.Show("Bạn có muốn lưu lại các thay đổi trước khi thoát không?", "Xác nhận", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+            if (result == DialogResult.Yes)
+            {
+                btnUpdate_Click(sender, e);
+            }
+            else if (result == DialogResult.No)
+            {
+                this.DialogResult = DialogResult.Cancel;
+                this.Close();
+            }
         }
 
         private void f_EditStudent_FormClosed(object sender, FormClosedEventArgs e)

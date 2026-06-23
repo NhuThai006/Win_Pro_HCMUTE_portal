@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 using QuanLySinhVien.Services;
+using QuanLySinhVien.Models;
 
 namespace QuanLySinhVien.UI
 {
@@ -10,18 +11,31 @@ namespace QuanLySinhVien.UI
         private Panel _headerPanel;
         private Label _lblTitle;
         private Button _btnClose;
+        private ComboBox _cboModel;
         private RichTextBox _rtbMessages;
         private Panel _inputPanel;
         private TextBox _txtInput;
         private Button _btnSend;
         private Label _lblStatus;
+        private FlowLayoutPanel _suggestionPanel;
         
         private GeminiApiService _geminiService;
+        private AiModelService _modelService;
         public event EventHandler CloseClicked;
 
-        public ChatPanel(string apiKey)
+        public ChatPanel(string fallbackApiKey, string qwenApiKey)
         {
-            _geminiService = new GeminiApiService(apiKey);
+            _modelService = new AiModelService();
+            _modelService.InitializeDatabase(); // Ensure DB is initialized
+
+            var activeModel = _modelService.GetActiveModel();
+            if (activeModel == null)
+            {
+                // Fallback in case of DB error
+                activeModel = new AiModel { ModelName = "Default", ApiType = "Gemini", ApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent" };
+            }
+
+            _geminiService = new GeminiApiService(activeModel, fallbackApiKey, qwenApiKey);
             InitializeComponents();
         }
 
@@ -32,12 +46,35 @@ namespace QuanLySinhVien.UI
             this.BorderStyle = BorderStyle.FixedSingle;
 
             _headerPanel = new Panel { Height = 40, Dock = DockStyle.Top, BackColor = ColorTranslator.FromHtml("#003087") };
-            _lblTitle = new Label { Text = "🎓 Hỗ trợ tư vấn HCMUTE", ForeColor = Color.White, Font = new Font("Segoe UI", 10, FontStyle.Bold), AutoSize = true, Location = new Point(10, 10) };
+            _lblTitle = new Label { Text = "🎓 Tư vấn", ForeColor = Color.White, Font = new Font("Segoe UI", 10, FontStyle.Bold), AutoSize = true, Location = new Point(5, 10) };
             _btnClose = new Button { Text = "X", ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Size = new Size(30, 30), Location = new Point(this.Width - 35, 5), Cursor = Cursors.Hand };
             _btnClose.FlatAppearance.BorderSize = 0;
             _btnClose.Click += (s, e) => CloseClicked?.Invoke(this, EventArgs.Empty);
 
+            _cboModel = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Width = 160,
+                Location = new Point(110, 8),
+                Font = new Font("Segoe UI", 8),
+                Cursor = Cursors.Hand
+            };
+
+            var models = _modelService.GetModels();
+            _cboModel.DataSource = models;
+            _cboModel.DisplayMember = "ModelName";
+            _cboModel.ValueMember = "Id";
+
+            var activeModel = _modelService.GetActiveModel();
+            if (activeModel != null)
+            {
+                _cboModel.SelectedValue = activeModel.Id;
+            }
+
+            _cboModel.SelectedIndexChanged += CboModel_SelectedIndexChanged;
+
             _headerPanel.Controls.Add(_lblTitle);
+            _headerPanel.Controls.Add(_cboModel);
             _headerPanel.Controls.Add(_btnClose);
 
             _inputPanel = new Panel { Height = 50, Dock = DockStyle.Bottom, BackColor = Color.WhiteSmoke };
@@ -53,12 +90,81 @@ namespace QuanLySinhVien.UI
             _lblStatus = new Label { Text = "Đang trả lời...", Dock = DockStyle.Bottom, ForeColor = Color.Gray, Font = new Font("Segoe UI", 8, FontStyle.Italic), AutoSize = false, Height = 20, TextAlign = ContentAlignment.MiddleLeft, Visible = false };
             _rtbMessages = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.White, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 10), ScrollBars = RichTextBoxScrollBars.Vertical };
 
+            _suggestionPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(5),
+                BackColor = Color.White
+            };
+
             this.Controls.Add(_rtbMessages);
+            this.Controls.Add(_suggestionPanel);
             this.Controls.Add(_lblStatus);
             this.Controls.Add(_inputPanel);
             this.Controls.Add(_headerPanel);
             
+            ShowSuggestions("default");
+            
             AppendMessage("Bot", "Xin chào! Mình là trợ lý ảo của trường Đại học Sư phạm Kỹ thuật TP.HCM (HCMUTE). Mình có thể giúp gì cho bạn?", ColorTranslator.FromHtml("#F5F5F5"), HorizontalAlignment.Left);
+        }
+
+        private void CboModel_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_cboModel.SelectedItem is AiModel selectedModel)
+            {
+                _modelService.SetActiveModel(selectedModel.Id);
+                _geminiService.ChangeModel(selectedModel);
+                
+                // Show notification in chat that model has changed
+                AppendMessage("Hệ thống", $"Đã chuyển sang model: {selectedModel.ModelName}", Color.LightYellow, HorizontalAlignment.Center);
+            }
+        }
+
+        private void ShowSuggestions(string context)
+        {
+            _suggestionPanel.Controls.Clear();
+            string[] suggestions;
+
+            if (context == "diem")
+            {
+                suggestions = new[] { "Cách quy đổi thang điểm", "Bao nhiêu điểm có thể tốt nghiệp" };
+            }
+            else if (context == "hocbong")
+            {
+                suggestions = new[] { "Điều kiện đạt học bổng là gì?" };
+            }
+            else if (context == "hocphi")
+            {
+                suggestions = new[] { "Đóng học phí trễ sẽ như thế nào?", "Không đủ tiền đóng học phí thì sao?" };
+            }
+            else
+            {
+                suggestions = new[] { "Cách tính điểm?", "Hỏi về các loại học bổng?", "Làm sao để đóng học phí?" };
+            }
+
+            foreach (var text in suggestions)
+            {
+                Button btn = new Button
+                {
+                    Text = text,
+                    AutoSize = true,
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = ColorTranslator.FromHtml("#E3F2FD"),
+                    ForeColor = ColorTranslator.FromHtml("#003087"),
+                    Cursor = Cursors.Hand,
+                    Margin = new Padding(3),
+                    Padding = new Padding(2),
+                    Font = new Font("Segoe UI", 9, FontStyle.Regular)
+                };
+                btn.FlatAppearance.BorderSize = 0;
+                btn.Click += (s, e) => {
+                    _txtInput.Text = text;
+                    _btnSend.PerformClick();
+                };
+                _suggestionPanel.Controls.Add(btn);
+            }
         }
 
         private void TxtInput_KeyDown(object sender, KeyEventArgs e)
@@ -81,6 +187,7 @@ namespace QuanLySinhVien.UI
             _txtInput.Enabled = false;
             _btnSend.Enabled = false;
             _lblStatus.Visible = true;
+            _suggestionPanel.Visible = false;
 
             try
             {
@@ -175,13 +282,37 @@ namespace QuanLySinhVien.UI
                     this.Invoke((MethodInvoker)delegate { AppendMessage("Bot", botReply, ColorTranslator.FromHtml("#F5F5F5"), HorizontalAlignment.Left); });
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                this.Invoke((MethodInvoker)delegate { AppendMessage("Hệ thống", "⚠️ Lỗi kết nối. Vui lòng thử lại.", Color.LightCoral, HorizontalAlignment.Center); });
+                this.Invoke((MethodInvoker)delegate { AppendMessage("Hệ thống", "⚠️ Lỗi kết nối hoặc xử lý. Chi tiết: " + ex.Message, Color.LightCoral, HorizontalAlignment.Center); });
             }
             finally
             {
-                this.Invoke((MethodInvoker)delegate { _txtInput.Enabled = true; _btnSend.Enabled = true; _lblStatus.Visible = false; _txtInput.Focus(); });
+                this.Invoke((MethodInvoker)delegate { 
+                    _txtInput.Enabled = true; 
+                    _btnSend.Enabled = true; 
+                    _lblStatus.Visible = false; 
+                    
+                    string lowerMsg = userMessage.ToLower().Trim();
+                    string context = "default";
+                    if (lowerMsg.Contains("cách tính điểm"))
+                    {
+                        context = "diem";
+                    }
+                    else if (lowerMsg.Contains("các loại học bổng"))
+                    {
+                        context = "hocbong";
+                    }
+                    else if (lowerMsg.Contains("làm sao để đóng học phí"))
+                    {
+                        context = "hocphi";
+                    }
+                    
+                    ShowSuggestions(context);
+                    _suggestionPanel.Visible = true;
+
+                    _txtInput.Focus(); 
+                });
             }
         }
 
@@ -193,8 +324,27 @@ namespace QuanLySinhVien.UI
             _rtbMessages.SelectionBackColor = bgColor;
             _rtbMessages.SelectionFont = new Font("Segoe UI", 9, FontStyle.Bold);
             _rtbMessages.AppendText($"[{sender}]\n");
-            _rtbMessages.SelectionFont = new Font("Segoe UI", 9, FontStyle.Regular);
-            _rtbMessages.AppendText($"{message}\n\n");
+            
+            // Format markdown list items (* or - at start of line) to bullets
+            message = System.Text.RegularExpressions.Regex.Replace(message, @"^(?:\*|\-)\s+", "• ", System.Text.RegularExpressions.RegexOptions.Multiline);
+            
+            // Parse markdown bold text (**text**)
+            var parts = System.Text.RegularExpressions.Regex.Split(message, @"(\*\*.*?\*\*)");
+            foreach (var part in parts)
+            {
+                if (part.StartsWith("**") && part.EndsWith("**") && part.Length >= 4)
+                {
+                    _rtbMessages.SelectionFont = new Font("Segoe UI", 9, FontStyle.Bold);
+                    _rtbMessages.AppendText(part.Substring(2, part.Length - 4));
+                }
+                else
+                {
+                    _rtbMessages.SelectionFont = new Font("Segoe UI", 9, FontStyle.Regular);
+                    _rtbMessages.AppendText(part);
+                }
+            }
+            
+            _rtbMessages.AppendText("\n\n");
             _rtbMessages.SelectionBackColor = _rtbMessages.BackColor; 
             _rtbMessages.SelectionAlignment = HorizontalAlignment.Left;
             _rtbMessages.ScrollToCaret();
